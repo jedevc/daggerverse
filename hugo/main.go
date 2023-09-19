@@ -6,7 +6,8 @@ import (
 )
 
 type HugoOpt struct {
-	Version string
+	HugoVersion     string
+	DartSassVersion string
 
 	BaseURL string
 	Minify  bool
@@ -48,8 +49,8 @@ func env(opt *HugoOpt) *Container {
 		From("debian:latest").
 		WithExec([]string{"apt-get", "update", "-y"}).
 		WithExec([]string{"apt-get", "install", "git", "-y"}).
-		WithDirectory("/", hugo(opt.Version)).
-		WithDirectory("/", sass("1.67.0"))
+		WithDirectory("/", hugo(opt.HugoVersion)).
+		WithDirectory("/", sass(opt.DartSassVersion))
 }
 
 func hugo(version string) *Directory {
