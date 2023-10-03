@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"runtime"
+	"strings"
 )
 
 type HugoOpt struct {
@@ -15,11 +17,11 @@ type HugoOpt struct {
 
 type Hugo struct{}
 
-func (h *Hugo) Build(ctx context.Context, d *Directory, opt *HugoOpt) (*Directory, error) {
+func (h *Hugo) Build(ctx context.Context, d *Directory, opt HugoOpt) (*Directory, error) {
 	return d.HugoBuild(ctx, opt)
 }
 
-func (d *Directory) HugoBuild(ctx context.Context, opt *HugoOpt) (*Directory, error) {
+func (d *Directory) HugoBuild(ctx context.Context, opt HugoOpt) (*Directory, error) {
 	srcPath := "/src"
 	destPath := "/dest"
 	cachePath := "/cache"
@@ -35,7 +37,11 @@ func (d *Directory) HugoBuild(ctx context.Context, opt *HugoOpt) (*Directory, er
 
 	cache := dag.CacheVolume("hugo-cache")
 
-	res := env(opt).
+	env, err := env(ctx, opt)
+	if err != nil {
+		return nil, err
+	}
+	res := env.
 		WithDirectory(srcPath, d).
 		WithWorkdir(srcPath).
 		WithMountedCache(cachePath, cache).
@@ -44,28 +50,82 @@ func (d *Directory) HugoBuild(ctx context.Context, opt *HugoOpt) (*Directory, er
 	return res, nil
 }
 
-func env(opt *HugoOpt) *Container {
-	return dag.Container().
+func env(ctx context.Context, opt HugoOpt) (*Container, error) {
+	hugo, err := hugo(ctx, opt.HugoVersion)
+	if err != nil {
+		return nil, err
+	}
+	sass, err := sass(ctx, opt.DartSassVersion)
+	if err != nil {
+		return nil, err
+	}
+	c := dag.Container().
 		From("debian:latest").
 		WithExec([]string{"apt-get", "update", "-y"}).
 		WithExec([]string{"apt-get", "install", "git", "-y"}).
-		WithDirectory("/", hugo(opt.HugoVersion)).
-		WithDirectory("/", sass(opt.DartSassVersion))
+		WithDirectory("/", hugo).
+		WithDirectory("/", sass)
+	return c, nil
 }
 
-func hugo(version string) *Directory {
-	download := fmt.Sprintf("https://github.com/gohugoio/hugo/releases/download/v%s/hugo_extended_%s_linux-amd64.tar.gz", version, version)
+func hugo(ctx context.Context, version string) (*Directory, error) {
+	var release *GithubRelease
+	switch version {
+	case "", "latest":
+		release = dag.Github().GetLatestRelease("gohugoio/hugo")
+	default:
+		release = dag.Github().GetRelease("gohugoio/hugo", version)
+	}
+
+	assets, err := release.Assets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	asset, err := getMatchingAsset(ctx, assets, []string{"hugo", "extended", runtime.GOOS, runtime.GOARCH, ".tar"})
+	if err != nil {
+		return nil, err
+	}
+	download, err := asset.DownloadURL(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	file := dag.HTTP(download)
 	filePath := "/mnt/hugo.tar.gz"
 
 	hugo := dag.Container().From("alpine:latest").
 		WithFile(filePath, file).
 		WithExec([]string{"tar", "--extract", "--directory", "/mnt", "--file", filePath})
-	return dag.Directory().WithFile("/usr/bin/hugo", hugo.File("/mnt/hugo"))
+	return dag.Directory().WithFile("/usr/bin/hugo", hugo.File("/mnt/hugo")), nil
 }
 
-func sass(version string) *Directory {
-	download := fmt.Sprintf("https://github.com/sass/dart-sass/releases/download/%s/dart-sass-%s-linux-x64.tar.gz", version, version)
+func sass(ctx context.Context, version string) (*Directory, error) {
+	var release *GithubRelease
+	switch version {
+	case "", "latest":
+		release = dag.Github().GetLatestRelease("sass/dart-sass")
+	default:
+		release = dag.Github().GetRelease("sass/dart-sass", version)
+	}
+
+	assets, err := release.Assets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	arch := runtime.GOARCH
+	if newArch, ok := sassReleaseArch[arch]; ok {
+		arch = newArch
+	}
+
+	asset, err := getMatchingAsset(ctx, assets, []string{"dart", "sass", runtime.GOOS, arch, ".tar"})
+	if err != nil {
+		return nil, err
+	}
+	download, err := asset.DownloadURL(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	file := dag.HTTP(download)
 	filePath := "/mnt/dart-sass.tar.gz"
 
@@ -78,5 +138,34 @@ exec "/usr/share/dart-sass/dart" "/usr/share/dart-sass/sass.snapshot" "$@"
 	return dag.Directory().
 		WithFile("/usr/share/dart-sass/dart", sass.File("/mnt/dart")).
 		WithFile("/usr/share/dart-sass/sass.snapshot", sass.File("/mnt/sass.snapshot")).
-		WithNewFile("/usr/bin/sass", script, DirectoryWithNewFileOpts{Permissions: 0o755})
+		WithNewFile("/usr/bin/sass", script, DirectoryWithNewFileOpts{Permissions: 0o755}), nil
+}
+
+func getMatchingAsset(ctx context.Context, assets []GithubAsset, keywords []string) (GithubAsset, error) {
+	for _, asset := range assets {
+		name, err := asset.Name(ctx)
+		if err != nil {
+			return GithubAsset{}, nil
+		}
+
+		matches := true
+		for _, keyword := range keywords {
+			if !strings.Contains(name, keyword) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return asset, nil
+		}
+	}
+
+	return GithubAsset{}, fmt.Errorf("could not find asset matching keywords %s", keywords)
+}
+
+var sassReleaseArch = map[string]string{
+	"amd64": "x64",
+	"386":   "ia32",
+	"arm":   "arm",
+	"arm64": "arm64",
 }
