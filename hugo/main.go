@@ -5,21 +5,14 @@ import (
 	"fmt"
 )
 
-type HugoOpt struct {
-	HugoVersion     string
-	DartSassVersion string
-
-	BaseURL string
-	Minify  bool
-}
+const (
+	DEFAULT_HUGO_VERSION = "0.119.0"
+	DEFAULT_DART_VERSION = "1.69.4"
+)
 
 type Hugo struct{}
 
-func (h *Hugo) Build(ctx context.Context, d *Directory, opt *HugoOpt) (*Directory, error) {
-	return d.HugoBuild(ctx, opt)
-}
-
-func (d *Directory) HugoBuild(ctx context.Context, opt *HugoOpt) (*Directory, error) {
+func (h *Hugo) Build(ctx context.Context, d *Directory, hugoVersion Optional[string], dartSassVersion Optional[string], baseURL Optional[string], minify Optional[bool]) (*Directory, error) {
 	srcPath := "/src"
 	destPath := "/dest"
 	cachePath := "/cache"
@@ -29,13 +22,14 @@ func (d *Directory) HugoBuild(ctx context.Context, opt *HugoOpt) (*Directory, er
 		"--cacheDir", cachePath,
 		"--destination", destPath,
 	}
-	if opt.BaseURL != "" {
-		args = append(args, "--baseURL", opt.BaseURL)
+	url, isSet := baseURL.Get()
+	if isSet {
+		args = append(args, "--baseURL", url)
 	}
 
 	cache := dag.CacheVolume("hugo-cache")
 
-	res := env(opt).
+	res := env(hugoVersion.GetOr(DEFAULT_HUGO_VERSION), dartVersion.GetOr(DEFUALT_DART_VERSION)).
 		WithDirectory(srcPath, d).
 		WithWorkdir(srcPath).
 		WithMountedCache(cachePath, cache).
@@ -44,7 +38,7 @@ func (d *Directory) HugoBuild(ctx context.Context, opt *HugoOpt) (*Directory, er
 	return res, nil
 }
 
-func env(opt *HugoOpt) *Container {
+func env(hugoVersion string, dartVersion string) *Container {
 	return dag.Container().
 		From("debian:latest").
 		WithExec([]string{"apt-get", "update", "-y"}).
@@ -54,7 +48,9 @@ func env(opt *HugoOpt) *Container {
 }
 
 func hugo(version string) *Directory {
-	download := fmt.Sprintf("https://github.com/gohugoio/hugo/releases/download/v%s/hugo_extended_%s_linux-amd64.tar.gz", version, version)
+	arch := runtime.GOARCH
+
+	download := fmt.Sprintf("https://github.com/gohugoio/hugo/releases/download/v%s/hugo_extended_%s_linux-%s.tar.gz", version, version, arch)
 	file := dag.HTTP(download)
 	filePath := "/mnt/hugo.tar.gz"
 
@@ -65,7 +61,12 @@ func hugo(version string) *Directory {
 }
 
 func sass(version string) *Directory {
-	download := fmt.Sprintf("https://github.com/sass/dart-sass/releases/download/%s/dart-sass-%s-linux-x64.tar.gz", version, version)
+	arch := runtime.GOARCH
+	if arch == "amd64" {
+		arch = "x64"
+	}
+
+	download := fmt.Sprintf("https://github.com/sass/dart-sass/releases/download/%s/dart-sass-%s-linux-%s.tar.gz", version, version, arch)
 	file := dag.HTTP(download)
 	filePath := "/mnt/dart-sass.tar.gz"
 
