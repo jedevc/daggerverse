@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"runtime"
 )
 
 const (
@@ -29,7 +30,7 @@ func (h *Hugo) Build(ctx context.Context, d *Directory, hugoVersion Optional[str
 
 	cache := dag.CacheVolume("hugo-cache")
 
-	res := env(hugoVersion.GetOr(DEFAULT_HUGO_VERSION), dartVersion.GetOr(DEFUALT_DART_VERSION)).
+	res := env(hugoVersion.GetOr(DEFAULT_HUGO_VERSION), dartSassVersion.GetOr(DEFAULT_DART_VERSION)).
 		WithDirectory(srcPath, d).
 		WithWorkdir(srcPath).
 		WithMountedCache(cachePath, cache).
@@ -43,8 +44,8 @@ func env(hugoVersion string, dartVersion string) *Container {
 		From("debian:latest").
 		WithExec([]string{"apt-get", "update", "-y"}).
 		WithExec([]string{"apt-get", "install", "git", "-y"}).
-		WithDirectory("/", hugo(opt.HugoVersion)).
-		WithDirectory("/", sass(opt.DartSassVersion))
+		WithDirectory("/", hugo(hugoVersion)).
+		WithDirectory("/", sass(dartVersion))
 }
 
 func hugo(version string) *Directory {
