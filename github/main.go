@@ -5,11 +5,8 @@ import (
 	"fmt"
 )
 
-type GithubRelease struct {
+type Release struct {
 	Repository *GitRepository
-
-	// TODO: what is doing on with the need for this json thing, why is it needed?
-	// Error: make request: input:1: github.latestRelease.name Cannot return null for non-nullable field GithubRelease.name.
 
 	Name string `json:"name"`
 	Tag  string `json:"tag"`
@@ -20,14 +17,14 @@ type GithubRelease struct {
 	CreatedAt   string `json:"createdAt"`
 	PublishedAt string `json:"publishedAt"`
 
-	Assets []GithubAsset `json:"assets"`
+	Assets []Asset `json:"assets"`
 }
 
-func (r *GithubRelease) Ref() *GitRef {
+func (r *Release) Ref() *GitRef {
 	return r.Repository.Tag(r.Tag)
 }
 
-type GithubAsset struct {
+type Asset struct {
 	Name  string `json:"name"`
 	Label string `json:"label"`
 
@@ -41,13 +38,11 @@ type GithubAsset struct {
 	UpdatedAt string `json:"updatedAt"`
 }
 
-func (a *GithubAsset) Void() {}
-
 type Github struct{}
 
 // TODO: use GitRepository and parse the git url from there
 
-func (r *Github) GetLatestRelease(ctx context.Context, repo string) (*GithubRelease, error) {
+func (r *Github) GetLatestRelease(ctx context.Context, repo string) (*Release, error) {
 	tmp, err := getLatestRelease(ctx, repo)
 	if err != nil {
 		return nil, err
@@ -58,7 +53,7 @@ func (r *Github) GetLatestRelease(ctx context.Context, repo string) (*GithubRele
 	return release, nil
 }
 
-func (r *Github) GetRelease(ctx context.Context, repo string, tag string) (*GithubRelease, error) {
+func (r *Github) GetRelease(ctx context.Context, repo string, tag string) (*Release, error) {
 	tmp, err := getReleaseByTag(ctx, repo, tag)
 	if err != nil {
 		return nil, err
@@ -70,8 +65,8 @@ func (r *Github) GetRelease(ctx context.Context, repo string, tag string) (*Gith
 }
 
 // TODO: we can remove tmp once the json problem is resolved
-func convertRelease(tmp *release) *GithubRelease {
-	release := GithubRelease{
+func convertRelease(tmp *release) *Release {
+	release := Release{
 		Name: tmp.Name,
 		Tag:  tmp.Tag,
 		Body: tmp.Body,
@@ -81,7 +76,7 @@ func convertRelease(tmp *release) *GithubRelease {
 		PublishedAt: tmp.PublishedAt,
 	}
 	for _, tmp := range tmp.Assets {
-		release.Assets = append(release.Assets, GithubAsset{
+		release.Assets = append(release.Assets, Asset{
 			Name:  tmp.Name,
 			Label: tmp.Label,
 

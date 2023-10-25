@@ -7,21 +7,17 @@ import (
 	"strings"
 )
 
-type HugoOpt struct {
-	HugoVersion     string
-	DartSassVersion string
-
-	BaseURL string
-	Minify  bool
-}
-
 type Hugo struct{}
 
-func (h *Hugo) Build(ctx context.Context, d *Directory, opt HugoOpt) (*Directory, error) {
-	return d.HugoBuild(ctx, opt)
-}
+func (h *Hugo) Build(
+	ctx context.Context,
+	d *Directory,
 
-func (d *Directory) HugoBuild(ctx context.Context, opt HugoOpt) (*Directory, error) {
+	hugoVersion string,
+	dartSassVersion string,
+
+	baseURL string,
+) (*Directory, error) {
 	srcPath := "/src"
 	destPath := "/dest"
 	cachePath := "/cache"
@@ -31,13 +27,13 @@ func (d *Directory) HugoBuild(ctx context.Context, opt HugoOpt) (*Directory, err
 		"--cacheDir", cachePath,
 		"--destination", destPath,
 	}
-	if opt.BaseURL != "" {
-		args = append(args, "--baseURL", opt.BaseURL)
+	if baseURL != "" {
+		args = append(args, "--baseURL", baseURL)
 	}
 
 	cache := dag.CacheVolume("hugo-cache")
 
-	env, err := env(ctx, opt)
+	env, err := env(ctx, hugoVersion, dartSassVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -50,12 +46,12 @@ func (d *Directory) HugoBuild(ctx context.Context, opt HugoOpt) (*Directory, err
 	return res, nil
 }
 
-func env(ctx context.Context, opt HugoOpt) (*Container, error) {
-	hugo, err := hugo(ctx, opt.HugoVersion)
+func env(ctx context.Context, hugoVersion string, dartSassVersion string) (*Container, error) {
+	hugo, err := hugo(ctx, hugoVersion)
 	if err != nil {
 		return nil, err
 	}
-	sass, err := sass(ctx, opt.DartSassVersion)
+	sass, err := sass(ctx, dartSassVersion)
 	if err != nil {
 		return nil, err
 	}

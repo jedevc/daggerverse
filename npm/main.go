@@ -6,7 +6,7 @@ import (
 
 type Npm struct{}
 
-func (dir *Directory) WithNodeModules() *Directory {
+func (npm *Npm) NodeModules(dir *Directory) *Directory {
 	src := dag.Directory().
 		WithDirectory("/", dir, DirectoryWithDirectoryOpts{
 			Include: []string{"package.json", "package-lock.json", "npm-shrinkwrap.json"},
