@@ -11,12 +11,12 @@ type Hugo struct{}
 
 func (h *Hugo) Build(
 	ctx context.Context,
-	d *Directory,
-
-	hugoVersion string,
-	dartSassVersion string,
-
-	baseURL string,
+	target *Directory,
+	hugoVersion Optional[string],
+	dartSassVersion Optional[string],
+	baseURL Optional[string],
+	hugoEnv Optional[string],
+	minify Optional[bool],
 ) (*Directory, error) {
 	srcPath := "/src"
 	destPath := "/dest"
@@ -27,18 +27,24 @@ func (h *Hugo) Build(
 		"--cacheDir", cachePath,
 		"--destination", destPath,
 	}
-	if baseURL != "" {
-		args = append(args, "--baseURL", baseURL)
+	if url, isSet := baseURL.Get(); isSet {
+		args = append(args, "--baseURL", url)
+	}
+	if environment, isSet := hugoEnv.Get(); isSet {
+		args = append(args, "--environment", environment)
+	}
+	if minify.GetOr(false) {
+		args = append(args, "--minify")
 	}
 
 	cache := dag.CacheVolume("hugo-cache")
 
-	env, err := env(ctx, hugoVersion, dartSassVersion)
+	buildEnv, err := env(ctx, hugoVersion.GetOr(""), dartSassVersion.GetOr(""))
 	if err != nil {
 		return nil, err
 	}
-	res := env.
-		WithDirectory(srcPath, d).
+	res := buildEnv.
+		WithDirectory(srcPath, target).
 		WithWorkdir(srcPath).
 		WithMountedCache(cachePath, cache).
 		WithExec(args).
