@@ -62,7 +62,7 @@ func env(ctx context.Context, hugoVersion string, dartSassVersion string) (*Cont
 		return nil, err
 	}
 	c := dag.Container().
-		From("debian:latest").
+		From("golang:1.21-bullseye").
 		WithExec([]string{"apt-get", "update", "-y"}).
 		WithExec([]string{"apt-get", "install", "git", "-y"}).
 		WithDirectory("/", hugo).
