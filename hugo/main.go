@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"runtime"
-	"strings"
 )
 
 type Hugo struct{}
@@ -94,7 +92,7 @@ func hugo(ctx context.Context, version string) (*Directory, error) {
 	if err != nil {
 		return nil, err
 	}
-	asset, err := getMatchingAsset(ctx, assets, []string{"hugo", "extended", runtime.GOOS, runtime.GOARCH, ".tar"})
+	asset, err := getMatchingAsset(ctx, assets, "hugo", "extended", runtime.GOOS, runtime.GOARCH, ".tar")
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +128,7 @@ func sass(ctx context.Context, version string) (*Directory, error) {
 		arch = newArch
 	}
 
-	asset, err := getMatchingAsset(ctx, assets, []string{"dart", "sass", runtime.GOOS, arch, ".tar"})
+	asset, err := getMatchingAsset(ctx, assets, "dart", "sass", runtime.GOOS, arch, ".tar")
 	if err != nil {
 		return nil, err
 	}
@@ -152,28 +150,6 @@ exec "/usr/share/dart-sass/dart" "/usr/share/dart-sass/sass.snapshot" "$@"
 		WithFile("/usr/share/dart-sass/dart", sass.File("/mnt/dart")).
 		WithFile("/usr/share/dart-sass/sass.snapshot", sass.File("/mnt/sass.snapshot")).
 		WithNewFile("/usr/bin/sass", script, DirectoryWithNewFileOpts{Permissions: 0o755}), nil
-}
-
-func getMatchingAsset(ctx context.Context, assets []GithubAsset, keywords []string) (GithubAsset, error) {
-	for _, asset := range assets {
-		name, err := asset.Name(ctx)
-		if err != nil {
-			return GithubAsset{}, nil
-		}
-
-		matches := true
-		for _, keyword := range keywords {
-			if !strings.Contains(name, keyword) {
-				matches = false
-				break
-			}
-		}
-		if matches {
-			return asset, nil
-		}
-	}
-
-	return GithubAsset{}, fmt.Errorf("could not find asset matching keywords %s", keywords)
 }
 
 var sassReleaseArch = map[string]string{
