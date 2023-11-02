@@ -40,9 +40,13 @@ type Asset struct {
 
 type Github struct{}
 
-// TODO: use GitRepository and parse the git url from there
+// Get the latest release for a repository
+func (r *Github) GetLatestRelease(
+	ctx context.Context,
 
-func (r *Github) GetLatestRelease(ctx context.Context, repo string) (*Release, error) {
+	// GitHub repository in the form of "owner/repo"
+	repo string,
+) (*Release, error) {
 	tmp, err := getLatestRelease(ctx, repo)
 	if err != nil {
 		return nil, err
@@ -53,7 +57,15 @@ func (r *Github) GetLatestRelease(ctx context.Context, repo string) (*Release, e
 	return release, nil
 }
 
-func (r *Github) GetRelease(ctx context.Context, repo string, tag string) (*Release, error) {
+// Get the specified release for a repository
+func (r *Github) GetRelease(
+	ctx context.Context,
+
+	// GitHub repository in the form of "owner/repo"
+	repo string,
+	// Tag name of the release
+	tag string,
+) (*Release, error) {
 	tmp, err := getReleaseByTag(ctx, repo, tag)
 	if err != nil {
 		return nil, err

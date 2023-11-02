@@ -9,13 +9,24 @@ import (
 
 type Hugo struct{}
 
+// Builds a Hugo site
 func (h *Hugo) Build(
 	ctx context.Context,
+
+	// Directory containing the Hugo site
 	target *Directory,
-	hugoVersion Optional[string],
-	dartSassVersion Optional[string],
-	baseURL Optional[string],
+
+	// Environment to build for
 	hugoEnv Optional[string],
+
+	// Version of Hugo to use (defaults to "latest")
+	hugoVersion Optional[string],
+	// Version of Dart Sass to use (defaults to "latest")
+	dartSassVersion Optional[string],
+
+	// Base URL of the site, overrides from config if set
+	baseURL Optional[string],
+	// Whether to minify the output, overrides from config if set
 	minify Optional[bool],
 ) (*Directory, error) {
 	srcPath := "/src"
