@@ -14,18 +14,24 @@ func (h *Hugo) Build(
 	// Directory containing the Hugo site
 	target *Directory,
 
+	// Base URL of the site, overrides from config if set
+	// +optional
+	baseURL *string,
 	// Environment to build for
-	hugoEnv Optional[string],
+	// +optional
+	hugoEnv *string,
+	// Whether to minify the output, overrides from config if set
+	// +optional
+	minify bool,
 
 	// Version of Hugo to use (defaults to "latest")
-	hugoVersion Optional[string],
+	// +optional
+	// +default=latest
+	hugoVersion string,
 	// Version of Dart Sass to use (defaults to "latest")
-	dartSassVersion Optional[string],
-
-	// Base URL of the site, overrides from config if set
-	baseURL Optional[string],
-	// Whether to minify the output, overrides from config if set
-	minify Optional[bool],
+	// +optional
+	// +default=latest
+	dartSassVersion string,
 ) (*Directory, error) {
 	srcPath := "/src"
 	destPath := "/dest"
@@ -36,19 +42,19 @@ func (h *Hugo) Build(
 		"--cacheDir", cachePath,
 		"--destination", destPath,
 	}
-	if url, isSet := baseURL.Get(); isSet {
-		args = append(args, "--baseURL", url)
+	if baseURL != nil {
+		args = append(args, "--baseURL", *baseURL)
 	}
-	if environment, isSet := hugoEnv.Get(); isSet {
-		args = append(args, "--environment", environment)
+	if hugoEnv != nil {
+		args = append(args, "--environment", *hugoEnv)
 	}
-	if minify.GetOr(false) {
+	if minify {
 		args = append(args, "--minify")
 	}
 
 	cache := dag.CacheVolume("hugo-cache")
 
-	buildEnv, err := env(ctx, hugoVersion.GetOr(""), dartSassVersion.GetOr(""))
+	buildEnv, err := env(ctx, hugoVersion, dartSassVersion)
 	if err != nil {
 		return nil, err
 	}
