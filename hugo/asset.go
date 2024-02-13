@@ -6,12 +6,15 @@ import (
 	"strings"
 )
 
-// getMatchingAsset returns the first asset whose name contains all of the
+// getMatchingAsset returns the shortest asset whose name contains all of the
 // given keywords.
 //
 // This is neccessary because GitHub doesn't provide a way to filter assets by
 // platform, or variant, or linux distro, etc.
 func getMatchingAsset(ctx context.Context, assets []GithubAsset, keywords ...string) (GithubAsset, error) {
+	best := GithubAsset{}
+	bestName := ""
+
 	for _, asset := range assets {
 		name, err := asset.Name(ctx)
 		if err != nil {
@@ -25,10 +28,13 @@ func getMatchingAsset(ctx context.Context, assets []GithubAsset, keywords ...str
 				break
 			}
 		}
-		if matches {
-			return asset, nil
+		if matches && (bestName == "" || len(name) < len(bestName)) {
+			best, bestName = asset, name
 		}
 	}
 
-	return GithubAsset{}, fmt.Errorf("could not find asset matching keywords %s", keywords)
+	if bestName == "" {
+		return GithubAsset{}, fmt.Errorf("could not find asset matching keywords %s", keywords)
+	}
+	return best, nil
 }
