@@ -26,11 +26,11 @@ func (h *Hugo) Build(
 
 	// Version of Hugo to use (defaults to "latest")
 	// +optional
-	// +default=latest
+	// +default="latest"
 	hugoVersion string,
 	// Version of Dart Sass to use (defaults to "latest")
 	// +optional
-	// +default=latest
+	// +default="latest"
 	dartSassVersion string,
 ) (*Directory, error) {
 	srcPath := "/src"
