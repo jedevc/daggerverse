@@ -1,3 +1,5 @@
+// Get details of GitHub releases and associated assets.
+
 package main
 
 import (
@@ -5,7 +7,9 @@ import (
 	"fmt"
 )
 
+// A GitHub release
 type Release struct {
+	// Git repository that the release is from
 	Repository *GitRepository
 
 	Name string `json:"name"`
@@ -20,6 +24,7 @@ type Release struct {
 	Assets []Asset `json:"assets"`
 }
 
+// Git reference pointed to by the release tag
 func (r *Release) Ref() *GitRef {
 	return r.Repository.Tag(r.Tag)
 }

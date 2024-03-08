@@ -1,3 +1,5 @@
+// Build hugo sites.
+
 package main
 
 import (

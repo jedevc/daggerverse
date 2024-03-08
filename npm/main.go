@@ -1,3 +1,5 @@
+// Install NPM packages.
+
 package main
 
 import (
@@ -6,6 +8,8 @@ import (
 
 type Npm struct{}
 
+// Installs npm packages into the node_modules/ directory using the package
+// files
 func (npm *Npm) NodeModules(dir *Directory) *Directory {
 	src := dag.Directory().
 		WithDirectory("/", dir, DirectoryWithDirectoryOpts{
