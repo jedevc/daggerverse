@@ -76,7 +76,6 @@ func (r *Github) GetRelease(
 	return release, nil
 }
 
-// TODO: we can remove tmp once the json problem is resolved
 func convertRelease(tmp *release) *Release {
 	release := Release{
 		Name: tmp.Name,

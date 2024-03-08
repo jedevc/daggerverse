@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github/dagger"
+	"github/internal/dagger"
 	"os"
 )
 
@@ -156,6 +156,9 @@ type ContainerPublishOpts = dagger.ContainerPublishOpts
 
 // ContainerTerminalOpts contains options for Container.Terminal
 type ContainerTerminalOpts = dagger.ContainerTerminalOpts
+
+// ContainerWithDefaultTerminalCmdOpts contains options for Container.WithDefaultTerminalCmd
+type ContainerWithDefaultTerminalCmdOpts = dagger.ContainerWithDefaultTerminalCmdOpts
 
 // ContainerWithDirectoryOpts contains options for Container.WithDirectory
 type ContainerWithDirectoryOpts = dagger.ContainerWithDirectoryOpts
@@ -357,6 +360,9 @@ type ModuleSourceOpts = dagger.ModuleSourceOpts
 // PipelineOpts contains options for Client.Pipeline
 type PipelineOpts = dagger.PipelineOpts
 
+// SecretOpts contains options for Client.Secret
+type SecretOpts = dagger.SecretOpts
+
 // A reference to a secret value, which can be handled more safely than the value itself.
 type Secret = dagger.Secret
 
@@ -498,6 +504,11 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 	return out
 }
 
+func (r Github) MarshalJSON() ([]byte, error) {
+	var concrete struct{}
+	return json.Marshal(&concrete)
+}
+
 func (r *Github) UnmarshalJSON(bs []byte) error {
 	var concrete struct{}
 	err := json.Unmarshal(bs, &concrete)
@@ -505,6 +516,28 @@ func (r *Github) UnmarshalJSON(bs []byte) error {
 		return err
 	}
 	return nil
+}
+
+func (r Release) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Repository  *GitRepository
+		Name        string  `json:"name"`
+		Tag         string  `json:"tag"`
+		Body        string  `json:"body"`
+		URL         string  `json:"url"`
+		CreatedAt   string  `json:"createdAt"`
+		PublishedAt string  `json:"publishedAt"`
+		Assets      []Asset `json:"assets"`
+	}
+	concrete.Repository = r.Repository
+	concrete.Name = r.Name
+	concrete.Tag = r.Tag
+	concrete.Body = r.Body
+	concrete.URL = r.URL
+	concrete.CreatedAt = r.CreatedAt
+	concrete.PublishedAt = r.PublishedAt
+	concrete.Assets = r.Assets
+	return json.Marshal(&concrete)
 }
 
 func (r *Release) UnmarshalJSON(bs []byte) error {
@@ -531,6 +564,28 @@ func (r *Release) UnmarshalJSON(bs []byte) error {
 	r.PublishedAt = concrete.PublishedAt
 	r.Assets = concrete.Assets
 	return nil
+}
+
+func (r Asset) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Name        string `json:"name"`
+		Label       string `json:"label"`
+		ContentType string `json:"contentType"`
+		Size        int    `json:"size"`
+		URL         string `json:"url"`
+		DownloadURL string `json:"downloadUrl"`
+		CreatedAt   string `json:"createdAt"`
+		UpdatedAt   string `json:"updatedAt"`
+	}
+	concrete.Name = r.Name
+	concrete.Label = r.Label
+	concrete.ContentType = r.ContentType
+	concrete.Size = r.Size
+	concrete.URL = r.URL
+	concrete.DownloadURL = r.DownloadURL
+	concrete.CreatedAt = r.CreatedAt
+	concrete.UpdatedAt = r.UpdatedAt
+	return json.Marshal(&concrete)
 }
 
 func (r *Asset) UnmarshalJSON(bs []byte) error {
@@ -618,18 +673,6 @@ func main() {
 
 func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	switch parentName {
-	case "Release":
-		switch fnName {
-		case "Ref":
-			var parent Release
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Release).Ref(&parent), nil
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
 	case "Github":
 		switch fnName {
 		case "GetLatestRelease":
@@ -667,6 +710,18 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Github).GetRelease(&parent, ctx, repo, tag)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "Release":
+		switch fnName {
+		case "Ref":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Release).Ref(&parent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

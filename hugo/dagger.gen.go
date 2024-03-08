@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"hugo/dagger"
+	"hugo/internal/dagger"
 	"os"
 )
 
@@ -165,6 +165,9 @@ type ContainerPublishOpts = dagger.ContainerPublishOpts
 
 // ContainerTerminalOpts contains options for Container.Terminal
 type ContainerTerminalOpts = dagger.ContainerTerminalOpts
+
+// ContainerWithDefaultTerminalCmdOpts contains options for Container.WithDefaultTerminalCmd
+type ContainerWithDefaultTerminalCmdOpts = dagger.ContainerWithDefaultTerminalCmdOpts
 
 // ContainerWithDirectoryOpts contains options for Container.WithDirectory
 type ContainerWithDirectoryOpts = dagger.ContainerWithDirectoryOpts
@@ -372,6 +375,9 @@ type ModuleSourceOpts = dagger.ModuleSourceOpts
 // PipelineOpts contains options for Client.Pipeline
 type PipelineOpts = dagger.PipelineOpts
 
+// SecretOpts contains options for Client.Secret
+type SecretOpts = dagger.SecretOpts
+
 // A reference to a secret value, which can be handled more safely than the value itself.
 type Secret = dagger.Secret
 
@@ -511,6 +517,11 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 		out[i] = f(v)
 	}
 	return out
+}
+
+func (r Hugo) MarshalJSON() ([]byte, error) {
+	var concrete struct{}
+	return json.Marshal(&concrete)
 }
 
 func (r *Hugo) UnmarshalJSON(bs []byte) error {

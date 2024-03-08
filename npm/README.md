@@ -10,12 +10,9 @@ total 36K
 -rw-r--r-- 1 jedevc jedevc 249 Oct 26 15:11 package.json
 -rw-r--r-- 1 jedevc jedevc 32K Oct 26 15:11 package-lock.json
 
-$ dagger -m github.com/jedevc/daggerverse/npm \
-    export --output=./target node-modules --dir=./target
-✔ dagger download node-modules [4.12s]
-┃ Asset exported to "./target"
-• Engine: b87daf4a7392 (version devel ())
-⧗ 4.85s ✔ 54 ∅ 9
+$ dagger -m github.com/jedevc/daggerverse/npm call \
+    node-modules --dir=./target export --path=./target
+true
 
 $ ls -lh ./target
 total 40K
