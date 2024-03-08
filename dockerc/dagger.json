@@ -1,0 +1,12 @@
+{
+  "name": "dockerc",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "github",
+      "source": "../github"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.10.1"
+}
