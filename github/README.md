@@ -30,7 +30,7 @@ $ dagger -m github.com/jedevc/daggerverse/github call \
 Go SDK usage:
 
 ```
-$ dagger mod use github.com/jedevc/daggerverse/github
+$ dagger install github.com/jedevc/daggerverse/github
 ```
 
 ```go

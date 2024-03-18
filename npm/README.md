@@ -24,7 +24,7 @@ drwxr-xr-x 56 jedevc jedevc 4.0K Oct 26 15:12 node_modules
 Go SDK usage:
 
 ```
-$ dagger mod use github.com/jedevc/daggerverse/npm
+$ dagger install github.com/jedevc/daggerverse/npm
 ```
 
 ```go

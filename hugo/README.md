@@ -13,7 +13,7 @@ true
 Go SDK usage:
 
 ```
-$ dagger mod use github.com/jedevc/daggerverse/hugo
+$ dagger install github.com/jedevc/daggerverse/hugo
 ```
 
 ```go
