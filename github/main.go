@@ -3,108 +3,50 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"strings"
+
+	"github/api"
+	"github/internal/dagger"
 )
 
-// A GitHub release
-type Release struct {
-	// Git repository that the release is from
-	Repository *GitRepository
-
-	Name string `json:"name"`
-	Tag  string `json:"tag"`
-	Body string `json:"body"`
-
-	URL string `json:"url"`
-
-	CreatedAt   string `json:"createdAt"`
-	PublishedAt string `json:"publishedAt"`
-
-	Assets []Asset `json:"assets"`
+type Github struct {
+	Token *Secret // +private
 }
 
-// Git reference pointed to by the release tag
-func (r *Release) Ref() *GitRef {
-	return r.Repository.Tag(r.Tag)
+func (gh *Github) WithTokenAuth(token *Secret) *Github {
+	ghClone := *gh
+	ghClone.Token = token
+	return &ghClone
 }
 
-type Asset struct {
-	Name  string `json:"name"`
-	Label string `json:"label"`
-
-	ContentType string `json:"contentType"`
-	Size        int    `json:"size"`
-
-	URL         string `json:"url"`
-	DownloadURL string `json:"downloadUrl"`
-
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
-}
-
-type Github struct{}
-
-// Get the latest release for a repository
-func (r *Github) GetLatestRelease(
-	ctx context.Context,
-
-	// GitHub repository in the form of "owner/repo"
-	repo string,
-) (*Release, error) {
-	tmp, err := getLatestRelease(ctx, repo)
-	if err != nil {
-		return nil, err
+func (gh *Github) Repo(repo string) (*Repo, error) {
+	owner, name, ok := strings.Cut(repo, "/")
+	if !ok {
+		return nil, fmt.Errorf("%s is not a valid repo", repo)
 	}
-	release := convertRelease(tmp)
-	release.Repository = dag.Git(fmt.Sprintf("https://github.com/%s.git", repo))
-
-	return release, nil
+	return &Repo{
+		Github: gh,
+		Owner:  owner,
+		Name:   name,
+	}, nil
 }
 
-// Get the specified release for a repository
-func (r *Github) GetRelease(
-	ctx context.Context,
-
-	// GitHub repository in the form of "owner/repo"
-	repo string,
-	// Tag name of the release
-	tag string,
-) (*Release, error) {
-	tmp, err := getReleaseByTag(ctx, repo, tag)
-	if err != nil {
-		return nil, err
-	}
-	release := convertRelease(tmp)
-	release.Repository = dag.Git(fmt.Sprintf("https://github.com/%s.git", repo))
-
-	return release, nil
+func (gh *Github) api() *api.API {
+	return &api.API{Token: gh.Token.Plaintext}
 }
 
-func convertRelease(tmp *release) *Release {
-	release := Release{
-		Name: tmp.Name,
-		Tag:  tmp.Tag,
-		Body: tmp.Body,
-		URL:  tmp.URL,
+type Repo struct {
+	*Github // +private
 
-		CreatedAt:   tmp.CreatedAt,
-		PublishedAt: tmp.PublishedAt,
-	}
-	for _, tmp := range tmp.Assets {
-		release.Assets = append(release.Assets, Asset{
-			Name:  tmp.Name,
-			Label: tmp.Label,
+	Owner string
+	Name  string
+}
 
-			ContentType: tmp.ContentType,
-			Size:        tmp.Size,
+func (r *Repo) String() string {
+	return r.Owner + "/" + r.Name
+}
 
-			URL:         tmp.URL,
-			DownloadURL: tmp.DownloadURL,
-
-			CreatedAt: tmp.CreatedAt,
-			UpdatedAt: tmp.UpdatedAt,
-		})
-	}
-	return &release
+func (r *Repo) Git() *dagger.GitRepository {
+	return dag.Git(fmt.Sprintf("https://github.com/%s/%s.git", r.Owner, r.Name))
 }

@@ -6,11 +6,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github/internal/dagger"
+	"log/slog"
 	"os"
+
+	"github/internal/dagger"
+	"github/internal/telemetry"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var dag = dagger.Connect()
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("dagger.io/sdk.go")
+}
+
+// used for local MarshalJSON implementations
+var marshalCtx = context.Background()
+
+// called by main()
+func setMarshalContext(ctx context.Context) {
+	marshalCtx = ctx
+	dagger.SetMarshalContext(ctx)
+}
 
 type DaggerObject = dagger.DaggerObject
 
@@ -87,6 +109,9 @@ type ModuleID = dagger.ModuleID
 
 // The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
 type ModuleSourceID = dagger.ModuleSourceID
+
+// The `ModuleSourceViewID` scalar type represents an identifier for an object of type ModuleSourceView.
+type ModuleSourceViewID = dagger.ModuleSourceViewID
 
 // The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
 type ObjectTypeDefID = dagger.ObjectTypeDefID
@@ -225,6 +250,9 @@ type DirectoryDockerBuildOpts = dagger.DirectoryDockerBuildOpts
 // DirectoryEntriesOpts contains options for Directory.Entries
 type DirectoryEntriesOpts = dagger.DirectoryEntriesOpts
 
+// DirectoryExportOpts contains options for Directory.Export
+type DirectoryExportOpts = dagger.DirectoryExportOpts
+
 // DirectoryPipelineOpts contains options for Directory.Pipeline
 type DirectoryPipelineOpts = dagger.DirectoryPipelineOpts
 
@@ -297,6 +325,8 @@ type GitRefTreeOpts = dagger.GitRefTreeOpts
 // A git repository.
 type GitRepository = dagger.GitRepository
 
+type WithGitRepositoryFunc = dagger.WithGitRepositoryFunc
+
 // A graphql input type, which is essentially just a group of named args.
 // This is currently only used to represent pre-existing usage of graphql input types
 // in the core API. It is not used by user modules and shouldn't ever be as user
@@ -327,6 +357,12 @@ type ModuleDependency = dagger.ModuleDependency
 type ModuleSource = dagger.ModuleSource
 
 type WithModuleSourceFunc = dagger.WithModuleSourceFunc
+
+// ModuleSourceResolveDirectoryFromCallerOpts contains options for ModuleSource.ResolveDirectoryFromCaller
+type ModuleSourceResolveDirectoryFromCallerOpts = dagger.ModuleSourceResolveDirectoryFromCallerOpts
+
+// A named set of path filters that can be applied to directory arguments provided to functions.
+type ModuleSourceView = dagger.ModuleSourceView
 
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef = dagger.ObjectTypeDef
@@ -505,31 +541,65 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 }
 
 func (r Github) MarshalJSON() ([]byte, error) {
-	var concrete struct{}
+	var concrete struct {
+		Token *Secret
+	}
+	concrete.Token = r.Token
 	return json.Marshal(&concrete)
 }
 
 func (r *Github) UnmarshalJSON(bs []byte) error {
-	var concrete struct{}
+	var concrete struct {
+		Token *Secret
+	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
+	r.Token = concrete.Token
+	return nil
+}
+
+func (r Repo) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Github *Github
+		Owner  string
+		Name   string
+	}
+	concrete.Github = r.Github
+	concrete.Owner = r.Owner
+	concrete.Name = r.Name
+	return json.Marshal(&concrete)
+}
+
+func (r *Repo) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Github *Github
+		Owner  string
+		Name   string
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Github = concrete.Github
+	r.Owner = concrete.Owner
+	r.Name = concrete.Name
 	return nil
 }
 
 func (r Release) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		Repository  *GitRepository
-		Name        string  `json:"name"`
-		Tag         string  `json:"tag"`
-		Body        string  `json:"body"`
-		URL         string  `json:"url"`
-		CreatedAt   string  `json:"createdAt"`
-		PublishedAt string  `json:"publishedAt"`
-		Assets      []Asset `json:"assets"`
+		Repo        *Repo
+		Name        string
+		Tag         string
+		Body        string
+		URL         string
+		CreatedAt   string
+		PublishedAt string
+		Assets      []Asset
 	}
-	concrete.Repository = r.Repository
+	concrete.Repo = r.Repo
 	concrete.Name = r.Name
 	concrete.Tag = r.Tag
 	concrete.Body = r.Body
@@ -542,20 +612,20 @@ func (r Release) MarshalJSON() ([]byte, error) {
 
 func (r *Release) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		Repository  *GitRepository
-		Name        string  `json:"name"`
-		Tag         string  `json:"tag"`
-		Body        string  `json:"body"`
-		URL         string  `json:"url"`
-		CreatedAt   string  `json:"createdAt"`
-		PublishedAt string  `json:"publishedAt"`
-		Assets      []Asset `json:"assets"`
+		Repo        *Repo
+		Name        string
+		Tag         string
+		Body        string
+		URL         string
+		CreatedAt   string
+		PublishedAt string
+		Assets      []Asset
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
-	r.Repository = concrete.Repository
+	r.Repo = concrete.Repo
 	r.Name = concrete.Name
 	r.Tag = concrete.Tag
 	r.Body = concrete.Body
@@ -568,14 +638,14 @@ func (r *Release) UnmarshalJSON(bs []byte) error {
 
 func (r Asset) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		Name        string `json:"name"`
-		Label       string `json:"label"`
-		ContentType string `json:"contentType"`
-		Size        int    `json:"size"`
-		URL         string `json:"url"`
-		DownloadURL string `json:"downloadUrl"`
-		CreatedAt   string `json:"createdAt"`
-		UpdatedAt   string `json:"updatedAt"`
+		Name        string
+		Label       string
+		ContentType string
+		Size        int
+		URL         string
+		DownloadURL string
+		CreatedAt   string
+		UpdatedAt   string
 	}
 	concrete.Name = r.Name
 	concrete.Label = r.Label
@@ -590,14 +660,14 @@ func (r Asset) MarshalJSON() ([]byte, error) {
 
 func (r *Asset) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		Name        string `json:"name"`
-		Label       string `json:"label"`
-		ContentType string `json:"contentType"`
-		Size        int    `json:"size"`
-		URL         string `json:"url"`
-		DownloadURL string `json:"downloadUrl"`
-		CreatedAt   string `json:"createdAt"`
-		UpdatedAt   string `json:"updatedAt"`
+		Name        string
+		Label       string
+		ContentType string
+		Size        int
+		URL         string
+		DownloadURL string
+		CreatedAt   string
+		UpdatedAt   string
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
@@ -617,90 +687,104 @@ func (r *Asset) UnmarshalJSON(bs []byte) error {
 func main() {
 	ctx := context.Background()
 
+	// Direct slog to the new stderr. This is only for dev time debugging, and
+	// runtime errors/warnings.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	})))
+
+	if err := dispatch(ctx); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(2)
+	}
+}
+
+func dispatch(ctx context.Context) error {
+	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String("dagger-go-sdk"),
+		// TODO version?
+	))
+	defer telemetry.Close()
+
+	ctx, span := Tracer().Start(ctx, "Go runtime",
+		trace.WithAttributes(
+			// In effect, the following two attributes hide the exec /runtime span.
+			//
+			// Replace the parent span,
+			attribute.Bool("dagger.io/ui.mask", true),
+			// and only show our children.
+			attribute.Bool("dagger.io/ui.passthrough", true),
+		))
+	defer span.End()
+
+	// A lot of the "work" actually happens when we're marshalling the return
+	// value, which entails getting object IDs, which happens in MarshalJSON,
+	// which has no ctx argument, so we use this lovely global variable.
+	setMarshalContext(ctx)
+
 	fnCall := dag.CurrentFunctionCall()
 	parentName, err := fnCall.ParentName(ctx)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("get parent name: %w", err)
 	}
 	fnName, err := fnCall.Name(ctx)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("get fn name: %w", err)
 	}
 	parentJson, err := fnCall.Parent(ctx)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("get fn parent: %w", err)
 	}
 	fnArgs, err := fnCall.InputArgs(ctx)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("get fn args: %w", err)
 	}
 
 	inputArgs := map[string][]byte{}
 	for _, fnArg := range fnArgs {
 		argName, err := fnArg.Name(ctx)
 		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(2)
+			return fmt.Errorf("get fn arg name: %w", err)
 		}
 		argValue, err := fnArg.Value(ctx)
 		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(2)
+			return fmt.Errorf("get fn arg value: %w", err)
 		}
 		inputArgs[argName] = []byte(argValue)
 	}
 
 	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("invoke: %w", err)
 	}
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("marshal: %w", err)
 	}
 	_, err = fnCall.ReturnValue(ctx, JSON(resultBytes))
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("store return value: %w", err)
 	}
+	return nil
 }
 
 func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	switch parentName {
-	case "Github":
+	case "Repo":
 		switch fnName {
 		case "GetLatestRelease":
-			var parent Github
+			var parent Repo
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var repo string
-			if inputArgs["repo"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
-				}
-			}
-			return (*Github).GetLatestRelease(&parent, ctx, repo)
+			return (*Repo).GetLatestRelease(&parent, ctx)
 		case "GetRelease":
-			var parent Github
+			var parent Repo
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var repo string
-			if inputArgs["repo"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
-				}
 			}
 			var tag string
 			if inputArgs["tag"] != nil {
@@ -709,60 +793,259 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
 				}
 			}
-			return (*Github).GetRelease(&parent, ctx, repo, tag)
+			return (*Repo).GetRelease(&parent, ctx, tag)
+		case "WithTokenAuth":
+			var parent Repo
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var token *Secret
+			if inputArgs["token"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["token"]), &token)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg token", err))
+				}
+			}
+			return (*Repo).WithTokenAuth(&parent, token), nil
+		case "Repo":
+			var parent Repo
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var repo string
+			if inputArgs["repo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
+				}
+			}
+			return (*Repo).Repo(&parent, repo)
+		case "String":
+			var parent Repo
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Repo).String(&parent), nil
+		case "Git":
+			var parent Repo
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Repo).Git(&parent), nil
+		case "MakePullRequest":
+			var parent Repo
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var dir *Directory
+			if inputArgs["dir"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["dir"]), &dir)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dir", err))
+				}
+			}
+			var title string
+			if inputArgs["title"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["title"]), &title)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg title", err))
+				}
+			}
+			var body string
+			if inputArgs["body"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["body"]), &body)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg body", err))
+				}
+			}
+			var draft bool
+			if inputArgs["draft"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["draft"]), &draft)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg draft", err))
+				}
+			}
+			var commitMessage string
+			if inputArgs["commitMessage"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["commitMessage"]), &commitMessage)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg commitMessage", err))
+				}
+			}
+			var signoff bool
+			if inputArgs["signoff"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["signoff"]), &signoff)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg signoff", err))
+				}
+			}
+			var author string
+			if inputArgs["author"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["author"]), &author)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg author", err))
+				}
+			}
+			var committer string
+			if inputArgs["committer"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["committer"]), &committer)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg committer", err))
+				}
+			}
+			var branch string
+			if inputArgs["branch"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["branch"]), &branch)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg branch", err))
+				}
+			}
+			var deleteBranch bool
+			if inputArgs["deleteBranch"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["deleteBranch"]), &deleteBranch)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg deleteBranch", err))
+				}
+			}
+			var base string
+			if inputArgs["base"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["base"]), &base)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg base", err))
+				}
+			}
+			return (*Repo).MakePullRequest(&parent, ctx, dir, title, body, draft, commitMessage, signoff, author, committer, branch, deleteBranch, base)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
 	case "Release":
 		switch fnName {
-		case "Ref":
+		case "Git":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Release).Ref(&parent), nil
+			return (*Release).Git(&parent), nil
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "Github":
+		switch fnName {
+		case "WithTokenAuth":
+			var parent Github
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var token *Secret
+			if inputArgs["token"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["token"]), &token)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg token", err))
+				}
+			}
+			return (*Github).WithTokenAuth(&parent, token), nil
+		case "Repo":
+			var parent Github
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var repo string
+			if inputArgs["repo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
+				}
+			}
+			return (*Github).Repo(&parent, repo)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
 	case "":
 		return dag.Module().
+			WithDescription("Get details of GitHub releases and associated assets.\n").
 			WithObject(
 				dag.TypeDef().WithObject("Github").
 					WithFunction(
+						dag.Function("WithTokenAuth",
+							dag.TypeDef().WithObject("Github")).
+							WithArg("token", dag.TypeDef().WithObject("Secret"))).
+					WithFunction(
+						dag.Function("Repo",
+							dag.TypeDef().WithObject("Repo")).
+							WithArg("repo", dag.TypeDef().WithKind(StringKind)))).
+			WithObject(
+				dag.TypeDef().WithObject("Repo").
+					WithFunction(
 						dag.Function("GetLatestRelease",
 							dag.TypeDef().WithObject("Release")).
-							WithDescription("Get the latest release for a repository").
-							WithArg("repo", dag.TypeDef().WithKind(StringKind), FunctionWithArgOpts{Description: "GitHub repository in the form of \"owner/repo\""})).
+							WithDescription("Get the latest release for a repository")).
 					WithFunction(
 						dag.Function("GetRelease",
 							dag.TypeDef().WithObject("Release")).
 							WithDescription("Get the specified release for a repository").
-							WithArg("repo", dag.TypeDef().WithKind(StringKind), FunctionWithArgOpts{Description: "GitHub repository in the form of \"owner/repo\""}).
-							WithArg("tag", dag.TypeDef().WithKind(StringKind), FunctionWithArgOpts{Description: "Tag name of the release"}))).
-			WithObject(
-				dag.TypeDef().WithObject("Release").
+							WithArg("tag", dag.TypeDef().WithKind(StringKind), FunctionWithArgOpts{Description: "Tag name of the release"})).
 					WithFunction(
-						dag.Function("Ref",
-							dag.TypeDef().WithObject("GitRef"))).
-					WithField("Repository", dag.TypeDef().WithObject("GitRepository")).
-					WithField("name", dag.TypeDef().WithKind(StringKind)).
-					WithField("tag", dag.TypeDef().WithKind(StringKind)).
-					WithField("body", dag.TypeDef().WithKind(StringKind)).
-					WithField("url", dag.TypeDef().WithKind(StringKind)).
-					WithField("createdAt", dag.TypeDef().WithKind(StringKind)).
-					WithField("publishedAt", dag.TypeDef().WithKind(StringKind)).
-					WithField("assets", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Asset")))).
+						dag.Function("WithTokenAuth",
+							dag.TypeDef().WithObject("Github")).
+							WithArg("token", dag.TypeDef().WithObject("Secret"))).
+					WithFunction(
+						dag.Function("Repo",
+							dag.TypeDef().WithObject("Repo")).
+							WithArg("repo", dag.TypeDef().WithKind(StringKind))).
+					WithFunction(
+						dag.Function("String",
+							dag.TypeDef().WithKind(StringKind))).
+					WithFunction(
+						dag.Function("Git",
+							dag.TypeDef().WithObject("GitRepository"))).
+					WithFunction(
+						dag.Function("MakePullRequest",
+							dag.TypeDef().WithKind(StringKind)).
+							WithArg("dir", dag.TypeDef().WithObject("Directory")).
+							WithArg("title", dag.TypeDef().WithKind(StringKind).WithOptional(true)).
+							WithArg("body", dag.TypeDef().WithKind(StringKind).WithOptional(true)).
+							WithArg("draft", dag.TypeDef().WithKind(BooleanKind).WithOptional(true)).
+							WithArg("commitMessage", dag.TypeDef().WithKind(StringKind).WithOptional(true), FunctionWithArgOpts{DefaultValue: JSON("\"[automated]\"")}).
+							WithArg("signoff", dag.TypeDef().WithKind(BooleanKind).WithOptional(true)).
+							WithArg("author", dag.TypeDef().WithKind(StringKind).WithOptional(true)).
+							WithArg("committer", dag.TypeDef().WithKind(StringKind).WithOptional(true), FunctionWithArgOpts{DefaultValue: JSON("\"Automated <automated@example.com>\"")}).
+							WithArg("branch", dag.TypeDef().WithKind(StringKind).WithOptional(true), FunctionWithArgOpts{DefaultValue: JSON("\"automated\"")}).
+							WithArg("deleteBranch", dag.TypeDef().WithKind(BooleanKind).WithOptional(true)).
+							WithArg("base", dag.TypeDef().WithKind(StringKind).WithOptional(true))).
+					WithField("Owner", dag.TypeDef().WithKind(StringKind)).
+					WithField("Name", dag.TypeDef().WithKind(StringKind))).
+			WithObject(
+				dag.TypeDef().WithObject("Release", TypeDefWithObjectOpts{Description: "A GitHub release"}).
+					WithFunction(
+						dag.Function("Git",
+							dag.TypeDef().WithObject("GitRef")).
+							WithDescription("Git reference pointed to by the release tag")).
+					WithField("Repo", dag.TypeDef().WithObject("Repo")).
+					WithField("Name", dag.TypeDef().WithKind(StringKind)).
+					WithField("Tag", dag.TypeDef().WithKind(StringKind)).
+					WithField("Body", dag.TypeDef().WithKind(StringKind)).
+					WithField("URL", dag.TypeDef().WithKind(StringKind)).
+					WithField("CreatedAt", dag.TypeDef().WithKind(StringKind)).
+					WithField("PublishedAt", dag.TypeDef().WithKind(StringKind)).
+					WithField("Assets", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Asset")))).
 			WithObject(
 				dag.TypeDef().WithObject("Asset").
-					WithField("name", dag.TypeDef().WithKind(StringKind)).
-					WithField("label", dag.TypeDef().WithKind(StringKind)).
-					WithField("contentType", dag.TypeDef().WithKind(StringKind)).
-					WithField("size", dag.TypeDef().WithKind(IntegerKind)).
-					WithField("url", dag.TypeDef().WithKind(StringKind)).
-					WithField("downloadUrl", dag.TypeDef().WithKind(StringKind)).
-					WithField("createdAt", dag.TypeDef().WithKind(StringKind)).
-					WithField("updatedAt", dag.TypeDef().WithKind(StringKind))), nil
+					WithField("Name", dag.TypeDef().WithKind(StringKind)).
+					WithField("Label", dag.TypeDef().WithKind(StringKind)).
+					WithField("ContentType", dag.TypeDef().WithKind(StringKind)).
+					WithField("Size", dag.TypeDef().WithKind(IntegerKind)).
+					WithField("URL", dag.TypeDef().WithKind(StringKind)).
+					WithField("DownloadURL", dag.TypeDef().WithKind(StringKind)).
+					WithField("CreatedAt", dag.TypeDef().WithKind(StringKind)).
+					WithField("UpdatedAt", dag.TypeDef().WithKind(StringKind))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}
