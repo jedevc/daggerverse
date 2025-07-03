@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"dagger/nerdctl/internal/dagger"
 )
 
@@ -51,11 +52,15 @@ func (n *Nerdctl) base() *dagger.Container {
 }
 
 func (n *Nerdctl) Reset(ctx context.Context) (*Nerdctl, error) {
-	var err error
-	n.Container, err = n.Container.
-		WithExec([]string{"sh", "-c", "nerdctl rm -f $(nerdctl ps -aq)"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
-		WithExec([]string{"sh", "-c", "ctr image rm -f $(ctr image ls -q)"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
-		WithExec([]string{"sh", "-c", "ctr content rm -f $(ctr content ls -q)"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
+	opts := dagger.ContainerWithExecOpts{
+		Expect:                   dagger.ReturnTypeAny, // ignore failures (from non-existent objects)
+		InsecureRootCapabilities: true,
+	}
+	_, err := n.Container.
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
+		WithExec([]string{"sh", "-c", "nerdctl rm -f $(nerdctl ps -aq)"}, opts).
+		WithExec([]string{"sh", "-c", "ctr image rm $(ctr image ls -q)"}, opts).
+		WithExec([]string{"sh", "-c", "ctr content rm $(ctr content ls -q)"}, opts).
 		Sync(ctx)
 	return n, err
 }
