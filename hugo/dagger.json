@@ -1,12 +1,13 @@
 {
   "name": "hugo",
-  "sdk": "go",
+  "engineVersion": "v0.18.12",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
-      "name": "github",
-      "source": "../github"
+      "name": "github-release",
+      "source": "../github-release"
     }
-  ],
-  "source": ".",
-  "engineVersion": "v0.10.1"
+  ]
 }

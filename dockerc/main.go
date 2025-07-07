@@ -6,7 +6,9 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"runtime"
+
+	"dockerc/internal/dagger"
 )
 
 type Dockerc struct {
@@ -24,51 +26,39 @@ func New(
 }
 
 // Compile an arbitrary target container into an executable file
-func (m *Dockerc) Compile(ctx context.Context, target *Container) (*File, error) {
-	binary, err := m.binary(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func (m *Dockerc) Compile(ctx context.Context, target *dagger.Container) (*dagger.File, error) {
 	result := dag.Container().
 		From("alpine").
-		WithMountedFile("/usr/local/bin/dockerc", binary).
+		WithMountedFile("/usr/local/bin/dockerc", m.binary()).
 		WithMountedFile("/target.tar.gz", target.AsTarball()).
 		WithExec([]string{"/usr/local/bin/dockerc", "--image", "oci-archive:/target.tar.gz", "--output=/output.tar.gz"}).
 		File("/output.tar.gz")
 	return result, nil
 }
 
-func (m *Dockerc) binary(ctx context.Context) (*File, error) {
-	var release *GithubRelease
+func (m *Dockerc) binary() *dagger.File {
+	var release *dagger.GithubReleaseRelease
 	switch m.Version {
 	case "", "latest":
-		release = dag.Github().GetLatestRelease("NilsIrl/dockerc")
+		release = dag.GithubRelease().GetLatest("NilsIrl/dockerc")
 	default:
-		release = dag.Github().GetRelease("NilsIrl/dockerc", m.Version)
+		release = dag.GithubRelease().Get("NilsIrl/dockerc", m.Version)
 	}
 
-	assets, err := release.Assets(ctx)
-	if err != nil {
-		return nil, err
+	arch := runtime.GOARCH
+	if newArch, ok := releaseArch[arch]; ok {
+		arch = newArch
 	}
-	for _, asset := range assets {
-		name, err := asset.Name(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if name == "dockerc" {
-			download, err := asset.DownloadURL(ctx)
-			if err != nil {
-				return nil, err
-			}
-			f := dag.Directory().
-				WithFile("/download", dag.HTTP(download), DirectoryWithFileOpts{
-					Permissions: 0o755,
-				}).
-				File("/download")
-			return f, nil
-		}
-	}
-	return nil, fmt.Errorf("no downloadable asset found")
+	asset := release.FindAsset([]string{"dockerc", arch}).File()
+	f := dag.Directory().
+		WithFile("/download", asset, dagger.DirectoryWithFileOpts{
+			Permissions: 0o755,
+		}).
+		File("/download")
+	return f
+}
+
+var releaseArch = map[string]string{
+	"amd64": "x86-64",
+	"arm64": "aarch64",
 }

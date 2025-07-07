@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"runtime"
+
+	"hugo/internal/dagger"
 )
 
 type Hugo struct{}
@@ -14,7 +16,7 @@ func (h *Hugo) Build(
 	ctx context.Context,
 
 	// Directory containing the Hugo site
-	target *Directory,
+	target *dagger.Directory,
 
 	// Base URL of the site, overrides from config if set
 	// +optional
@@ -34,7 +36,7 @@ func (h *Hugo) Build(
 	// +optional
 	// +default="latest"
 	dartSassVersion string,
-) (*Directory, error) {
+) (*dagger.Directory, error) {
 	srcPath := "/src"
 	destPath := "/dest"
 	cachePath := "/cache"
@@ -63,13 +65,14 @@ func (h *Hugo) Build(
 	res := buildEnv.
 		WithDirectory(srcPath, target).
 		WithWorkdir(srcPath).
+		WithDirectory(destPath, dag.Directory()).
 		WithMountedCache(cachePath, cache).
 		WithExec(args).
 		Directory(destPath)
 	return res, nil
 }
 
-func env(ctx context.Context, hugoVersion string, dartSassVersion string) (*Container, error) {
+func env(ctx context.Context, hugoVersion string, dartSassVersion string) (*dagger.Container, error) {
 	hugo, err := hugo(ctx, hugoVersion)
 	if err != nil {
 		return nil, err
@@ -87,23 +90,16 @@ func env(ctx context.Context, hugoVersion string, dartSassVersion string) (*Cont
 	return c, nil
 }
 
-func hugo(ctx context.Context, version string) (*Directory, error) {
-	var release *GithubRelease
+func hugo(ctx context.Context, version string) (*dagger.Directory, error) {
+	var release *dagger.GithubReleaseRelease
 	switch version {
 	case "", "latest":
-		release = dag.Github().GetLatestRelease("gohugoio/hugo")
+		release = dag.GithubRelease().GetLatest("gohugoio/hugo")
 	default:
-		release = dag.Github().GetRelease("gohugoio/hugo", version)
+		release = dag.GithubRelease().Get("gohugoio/hugo", version)
 	}
 
-	assets, err := release.Assets(ctx)
-	if err != nil {
-		return nil, err
-	}
-	asset, err := getMatchingAsset(ctx, assets, "hugo", "extended", runtime.GOOS, runtime.GOARCH, ".tar")
-	if err != nil {
-		return nil, err
-	}
+	asset := release.FindAsset([]string{"hugo", "extended", runtime.GOOS, runtime.GOARCH, ".tar"})
 	download, err := asset.DownloadURL(ctx)
 	if err != nil {
 		return nil, err
@@ -118,28 +114,20 @@ func hugo(ctx context.Context, version string) (*Directory, error) {
 	return dag.Directory().WithFile("/usr/bin/hugo", hugo.File("/mnt/hugo")), nil
 }
 
-func sass(ctx context.Context, version string) (*Directory, error) {
-	var release *GithubRelease
+func sass(ctx context.Context, version string) (*dagger.Directory, error) {
+	var release *dagger.GithubReleaseRelease
 	switch version {
 	case "", "latest":
-		release = dag.Github().GetLatestRelease("sass/dart-sass")
+		release = dag.GithubRelease().GetLatest("sass/dart-sass")
 	default:
-		release = dag.Github().GetRelease("sass/dart-sass", version)
+		release = dag.GithubRelease().Get("sass/dart-sass", version)
 	}
 
-	assets, err := release.Assets(ctx)
-	if err != nil {
-		return nil, err
-	}
 	arch := runtime.GOARCH
 	if newArch, ok := sassReleaseArch[arch]; ok {
 		arch = newArch
 	}
-
-	asset, err := getMatchingAsset(ctx, assets, "dart", "sass", runtime.GOOS, arch, ".tar")
-	if err != nil {
-		return nil, err
-	}
+	asset := release.FindAsset([]string{"dart", "sass", runtime.GOOS, arch, ".tar"})
 	download, err := asset.DownloadURL(ctx)
 	if err != nil {
 		return nil, err
@@ -157,7 +145,7 @@ exec "/usr/share/dart-sass/dart" "/usr/share/dart-sass/sass.snapshot" "$@"
 	return dag.Directory().
 		WithFile("/usr/share/dart-sass/dart", sass.File("/mnt/dart")).
 		WithFile("/usr/share/dart-sass/sass.snapshot", sass.File("/mnt/sass.snapshot")).
-		WithNewFile("/usr/bin/sass", script, DirectoryWithNewFileOpts{Permissions: 0o755}), nil
+		WithNewFile("/usr/bin/sass", script, dagger.DirectoryWithNewFileOpts{Permissions: 0o755}), nil
 }
 
 var sassReleaseArch = map[string]string{
